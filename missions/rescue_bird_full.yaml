@@ -1,0 +1,79 @@
+# rescue_bird_full.yaml
+# End-to-end "rescue bird" mission: search a wide area, identify survivors,
+# track while operator confirms, transition through degraded comms, return.
+# This is the scenario whose telemetry the silicon partition report should
+# ultimately be built against — it exercises every subsystem.
+
+name: rescue_bird_full
+description: |
+  Full rescue scenario:
+    1. Transit to search area (5G link).
+    2. Lawn-mower search at 50m AGL.
+    3. Detect 2-3 simulated survivors (person_supine / person_waving).
+    4. For each, transition acquire → track → operator-confirm → mark-and-move-on.
+    5. Comms degrades partway through (LINK_PROFILE flips to 'degraded').
+       Encode bitrate must adapt; perception continues unaffected.
+    6. Return to home.
+
+  Run with multiple precisions to populate the BF16-vs-FP16 comparison table:
+    MODEL_PRECISION=bf16 ./scripts/run_mission.sh rescue_bird_full
+    MODEL_PRECISION=fp16 ./scripts/run_mission.sh rescue_bird_full
+
+duration_s: 420
+
+start:
+  lat: 30.2672
+  lon: -97.7431
+  alt_m: 50
+
+search_area:
+  shape: rectangle
+  width_m: 400
+  height_m: 400
+  altitude_m: 50
+  speed_mps: 10
+  track_spacing_m: 30
+
+targets:
+  - id: survivor_1
+    lat: 30.2680
+    lon: -97.7435
+    type: person_supine
+    motion: stationary
+  - id: survivor_2
+    lat: 30.2690
+    lon: -97.7420
+    type: person_waving
+    motion: stationary
+  - id: survivor_3
+    lat: 30.2685
+    lon: -97.7425
+    type: person_walking
+    motion: walking_random
+    speed_mps: 0.8
+
+events:
+  - at_s: 180
+    action: change_link_profile
+    profile: degraded
+  - at_s: 300
+    action: change_link_profile
+    profile: 5g_lte
+
+phases_expected:
+  - transit
+  - search
+  - acquire
+  - track
+  - search
+  - acquire
+  - track
+  - search
+  - acquire
+  - track
+  - return_to_home
+
+success_criteria:
+  - all_survivors_detected: true
+  - end_to_end_latency_p99_ms_under: 200
+  - perception_dropouts_during_degraded_link: 0

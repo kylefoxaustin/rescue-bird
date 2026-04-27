@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <n>drone_bringup</n>
+  <version>0.1.0</version>
+  <description>Top-level launch files for the rescue-bird stack.</description>
+  <maintainer email="kyle@example.invalid">Kyle</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>drone_telemetry</exec_depend>
+  <exec_depend>drone_isp</exec_depend>
+  <exec_depend>drone_dsp</exec_depend>
+  <exec_depend>drone_perception</exec_depend>
+  <exec_depend>drone_vio</exec_depend>
+  <exec_depend>drone_radar</exec_depend>
+  <exec_depend>drone_video_encode</exec_depend>
+  <exec_depend>drone_behavior</exec_depend>
+  <exec_depend>drone_comms</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,13 @@
+# Behavior + telemetry container. Lightweight, no CUDA needed.
+FROM ros:humble-ros-base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-mavros python3-pip \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir \
+        pymavlink mavsdk pyarrow pandas numpy py_trees psutil
+
+WORKDIR /ros2_ws
+SHELL ["/bin/bash", "-c"]
+CMD ["bash"]

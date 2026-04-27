@@ -1,0 +1,31 @@
+# Perception container: PyTorch + TensorRT for SAM2/EdgeTAM/YOLO.
+# Configured for BF16 path on Ada/Blackwell-class GPUs.
+FROM nvcr.io/nvidia/pytorch:24.10-py3
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=humble
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl gnupg lsb-release locales \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/ros2.list \
+ && apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-ros-base ros-humble-cv-bridge ros-humble-image-transport \
+        python3-colcon-common-extensions \
+ && rm -rf /var/lib/apt/lists/*
+
+# Perception stack
+# ultralytics for YOLOv8, segment-anything-2 for SAM2/EdgeTAM
+RUN pip install --no-cache-dir \
+        ultralytics \
+        opencv-python-headless \
+        onnx onnxruntime-gpu \
+        nvidia-ml-py psutil pyarrow
+
+# SAM2 / EdgeTAM weights are pulled by setup.sh into ../models, mounted at /opt/models
+
+WORKDIR /ros2_ws
+SHELL ["/bin/bash", "-c"]
+CMD ["bash"]

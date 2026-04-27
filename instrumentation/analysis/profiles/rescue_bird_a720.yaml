@@ -1,0 +1,149 @@
+# rescue_bird_a720.yaml
+# Target processor profile aligned with the keyhole sizer assumptions:
+#   - Cortex-A720 application complex
+#   - Up to 200 TOPS NPU (BF16/FP16/INT8)
+#   - LLM-capable (sufficient memory bandwidth and capacity)
+#   - LPDDR5x with multi-channel
+#   - Dedicated VPU with low-latency mode
+#   - Cortex-M companion core for hard real-time flight control
+#
+# All values are baseline defaults. They get overridden by:
+#   1. Optional CLI flags on soc_partition_report.py
+#   2. The whatif/ slider config when generating sweeps
+# So this file is the "starting point" — the report's numbers shift as you
+# move the sliders.
+
+name: rescue_bird_a720
+description: |
+  A720-class application complex with 200 TOPS NPU. Sized to host concurrent
+  perception (SAM/TAM transformer), VIO, video encode, radar fusion, and
+  occasional on-device LLM reasoning. Companion Cortex-M for flight control.
+
+# ──── Application complex (Cortex-A720) ────
+cpu:
+  cores: 8
+  arch: cortex_a720
+  clock_ghz_max: 2.4
+  l2_kb_per_cluster: 2048
+  l3_kb: 4096
+  smt: false
+  efficiency_factor: 0.7         # realistic sustained vs peak
+
+# ──── Real-time companion (flight control) ────
+rt_core:
+  present: true
+  type: cortex_m7
+  clock_mhz: 600
+  tcm_kb: 256
+
+# ──── NPU ────
+npu:
+  tops_bf16: 200
+  tops_fp16: 200
+  tops_int8: 400
+  supports_bf16: true
+  supports_fp16: true
+  supports_int8: true
+  supports_int4: true
+  local_sram_mb: 16
+  efficiency_factor: 0.55        # transformer-heavy workloads rarely hit >60% of peak
+  # LLM-specific
+  llm_capable: true
+  llm_max_context_tokens: 8192
+  llm_max_model_params_b: 7
+
+# ──── GPU (3D + general compute) ────
+gpu:
+  present: true
+  gflops_fp32: 800
+  efficiency_factor: 0.5
+
+# ──── VPU ────
+# IMPORTANT: peak Mpix/s alone is insufficient. Low-latency mode determines
+# whether this VPU can hit the FPV tree-dodging budget (5-15ms encode).
+vpu:
+  h265_max_mpix_per_sec: 500
+  h264_max_mpix_per_sec: 500
+  av1_supported: true
+  low_latency_mode: true                  # supports slice output + intra-refresh
+  min_encode_latency_ms: 6                # achievable in low-latency mode at 1080p60
+  typical_encode_latency_ms: 12
+
+# ──── ISP (Image Signal Processor) ────
+# Hardware ISP block. Sized to support realistic 360° surround config:
+# 2× 4MP@60 forward stereo + 4× 2MP@30 surround = ~720 Mpix/s sustained.
+# Spec'd at 1200 Mpix/s peak with 8 concurrent streams to leave headroom
+# for HDR-on-front and one extra camera (downward / upward).
+isp:
+  present: true
+  max_line_rate_mpps: 1200             # supports 6-cam mixed-res config
+  max_resolution: "8K_30"               # peak burst capability
+  max_concurrent_streams: 8             # surround + stereo + utility
+  csi2_lanes_total: 16                  # plenty for 8 cameras at 4 lanes each is excessive; share
+  csi2_max_gbps_per_lane: 4.5
+  bit_depth: 16                          # 16-bit pipeline avoids precision loss
+  hdr_exposures_supported: 4            # up to 4-exposure HDR merge
+  ldc_supported: true                    # lens distortion correction in HW
+  ltm_supported: true                    # local tone mapping
+  efficiency_factor: 0.85               # ISPs are deterministic; high efficiency
+
+# ──── Vision DSP (Cadence Tensilica Vision Q-class) ────
+# Used for pyramid construction, optical flow init, HDR merge, geometric
+# warps — anything that's classical CV with high arithmetic intensity but
+# poor NPU mapping. Critical for VIO front-end and any non-NN preprocessing.
+dsp:
+  present: true
+  count: 2                               # dual-DSP for stereo / multi-cam
+  type: cadence_vision_q7
+  clock_mhz: 1100
+  simd_width_bits: 1024                  # Q7-class
+  simd_lanes_int16: 32                   # output pixels per cycle for 16-bit
+  local_sram_kb: 1024                    # per DSP
+  efficiency_factor: 0.65                # higher than NPU on small-kernel CV
+  # Workload allowance — cycles available per frame at given fps
+  giga_cycles_per_sec: 2.2               # clock × count (1.1 GHz × 2)
+
+# ──── Memory ────
+memory:
+  type: LPDDR5x
+  channels: 2                              # x32 effective
+  bus_width_per_channel_bits: 16
+  bw_gbps: 68                              # 2× LPDDR5x-8533 per channel
+  capacity_gb_max: 32
+  controller_efficiency: 0.75              # usable BW = bw_gbps × this × headroom
+  refresh_overhead_pct: 5
+
+# ──── Storage ────
+storage:
+  ufs: true
+  ufs_version: "4.0"
+  ufs_max_mbps: 4200
+  emmc: false
+
+# ──── Connectivity ────
+connectivity:
+  pcie_gen: 5
+  pcie_lanes: 4
+  mipi_csi_lanes: 12
+  mipi_csi_max_gbps_per_lane: 4.5
+  ethernet_max_gbps: 10
+  has_5g_modem: false                      # external modem assumed
+
+# ──── Latency budgets (drives FPV/tree-dodging pass/fail) ────
+latency_budgets_ms:
+  glass_to_glass_p99: 100                  # tree-dodging maximum
+  perception_inference_p99: 50
+  radar_to_command_p99: 30                 # safety-critical for obstacle avoidance
+  fc_inner_loop_period: 1                  # 1kHz attitude loop on RT core
+
+# ──── Headroom requirements ────
+# Reserve fraction of each engine for: thermal margin, OS overhead,
+# unexpected workload spikes. Enforced by the report.
+headroom_pct:
+  npu: 25
+  cpu: 30
+  gpu: 30
+  vpu: 20
+  isp: 15
+  dsp: 25
+  memory_bw: 25

@@ -1,0 +1,96 @@
+# fog_rescue.yaml
+# Degraded visibility scenario — fog/smoke. Camera perception confidence is
+# low; radar carries the obstacle avoidance and target localization load.
+# Exercises the radar + radar_fusion subsystems and stresses the LPDDR5
+# bandwidth contention story.
+#
+# This is the headline scenario for justifying:
+#   - Native BF16 on the NPU (radar fusion is BF16-native in modern
+#     architectures; FP16-only NPUs lose accuracy on small-confidence detections)
+#   - Multi-channel LPDDR5 (perception + radar + fusion + encode contend)
+#   - Low-latency VPU mode (operator still needs to dodge through fog at speed)
+
+name: fog_rescue
+description: |
+  Search and rescue in heavy fog (visibility ~30m). Camera-only perception
+  is unreliable; radar provides the obstacle ranges. Operator pilots through
+  trees with radar-overlay augmented video. Mission tests:
+    - Radar point cloud ingest at sustained 20-30Hz
+    - Camera+radar BEV fusion under low optical confidence
+    - Glass-to-glass latency budget (still need <100ms for tree-dodging)
+    - LLM-assisted reasoning for ambiguous detections (optional)
+
+duration_s: 360
+
+start:
+  lat: 30.2672
+  lon: -97.7431
+  alt_m: 30                          # lower altitude; pilot wants close detail
+
+visibility:
+  fog_density: 0.7                   # 0=clear, 1=fully opaque
+  visual_range_m: 30
+  optical_confidence_modifier: 0.4   # detections downgraded by this factor
+
+search_area:
+  shape: rectangle
+  width_m: 300
+  height_m: 300
+  altitude_m: 30
+  speed_mps: 6                       # slower in fog
+  track_spacing_m: 25
+
+radar:
+  format: range_doppler              # the interesting middle ground for fusion
+  hz: 25
+  points_per_frame: 1500             # forest scene — many returns
+
+fusion:
+  mode: bev_fusion_full              # need the full model when optical is degraded
+
+targets:
+  - id: survivor_1
+    lat: 30.2680
+    lon: -97.7435
+    type: person_supine
+    motion: stationary
+    optical_visibility: low          # camera barely sees them
+    radar_signature: medium
+  - id: survivor_2
+    lat: 30.2690
+    lon: -97.7420
+    type: person_waving
+    motion: stationary
+    optical_visibility: low
+    radar_signature: high
+
+# Trees are positioned to require radar-driven obstacle avoidance
+obstacles:
+  type: forest_dense
+  tree_count: 200
+  bounding_radius_m: 300
+
+events:
+  - at_s: 60
+    action: enable_radar_fusion
+    mode: bev_fusion_full
+  - at_s: 200
+    action: enable_llm_reasoning
+    note: "Operator asks 'is that a person or a backpack?' — uses on-device LLM"
+
+phases_expected:
+  - transit
+  - search
+  - acquire
+  - track
+  - search
+  - acquire
+  - track
+  - return_to_home
+
+success_criteria:
+  - all_survivors_detected: true
+  - end_to_end_latency_p99_ms_under: 100
+  - radar_to_command_p99_ms_under: 30
+  - perception_dropouts_during_fog: 0
+  - obstacle_avoidance_failures: 0

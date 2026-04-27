@@ -1,0 +1,113 @@
+# docker-compose for rescue-bird
+# Brings up: PX4 SITL + Gazebo, ROS 2 nodes, perception (CUDA), comms emulator
+#
+# All GPU-using services share the host GPU via the nvidia runtime.
+# Network is host-mode for low-latency MAVLink and ROS 2 DDS.
+
+version: "3.9"
+
+services:
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Simulation: Gazebo + PX4 SITL. Renders sensor data, runs flight stack.
+  # ──────────────────────────────────────────────────────────────────────
+  sim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sim
+    image: rescue-bird/sim:latest
+    container_name: rb-sim
+    network_mode: host
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - PX4_SIM_MODEL=${PX4_SIM_MODEL:-gazebo-classic_iris}
+      - PX4_GZ_WORLD=${PX4_GZ_WORLD:-search_area}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../gazebo/worlds:/opt/worlds:ro
+      - ../px4/airframes:/opt/airframes:ro
+      - ../runs:/runs:rw
+    command: ["/opt/scripts/start_sim.sh"]
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Perception: TensorRT + PyTorch. SAM2 / EdgeTAM / YOLO inference.
+  # This is the workload that informs NPU sizing.
+  # ──────────────────────────────────────────────────────────────────────
+  perception:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.perception
+    image: rescue-bird/perception:latest
+    container_name: rb-perception
+    network_mode: host
+    runtime: nvidia
+    depends_on:
+      - sim
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+      - MODEL_PRECISION=${MODEL_PRECISION:-bf16}     # bf16 | fp16 | int8
+      - MODEL_NAME=${MODEL_NAME:-edgetam}            # edgetam | sam2 | yolov8
+    volumes:
+      - ../models:/opt/models:ro
+      - ../ros2_ws:/ros2_ws:rw
+      - ../runs:/runs:rw
+    command: ["ros2", "launch", "drone_perception", "perception.launch.py"]
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Comms: WiFi/5G link emulator + video encode + MAVLink router.
+  # Models the radio path so latency/jitter/loss are realistic.
+  # ──────────────────────────────────────────────────────────────────────
+  comms:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.comms
+    image: rescue-bird/comms:latest
+    container_name: rb-comms
+    network_mode: host
+    runtime: nvidia
+    depends_on:
+      - sim
+    environment:
+      - LINK_PROFILE=${LINK_PROFILE:-wifi_suburban}  # wifi_suburban | 5g_lte | degraded
+      - ENCODE_BITRATE_KBPS=${ENCODE_BITRATE_KBPS:-6000}
+      - ENCODE_CODEC=${ENCODE_CODEC:-h265}
+    volumes:
+      - ../ros2_ws:/ros2_ws:rw
+      - ../runs:/runs:rw
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Behavior + Telemetry: mission FSM + instrumentation aggregator.
+  # ──────────────────────────────────────────────────────────────────────
+  behavior:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.behavior
+    image: rescue-bird/behavior:latest
+    container_name: rb-behavior
+    network_mode: host
+    depends_on:
+      - sim
+    volumes:
+      - ../ros2_ws:/ros2_ws:rw
+      - ../missions:/opt/missions:ro
+      - ../runs:/runs:rw
+
+  # ──────────────────────────────────────────────────────────────────────
+  # GCS: QGroundControl. Runs on host display.
+  # ──────────────────────────────────────────────────────────────────────
+  gcs:
+    image: rescue-bird/gcs:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gcs
+    container_name: rb-gcs
+    network_mode: host
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    profiles: ["with-gcs"]   # only starts when explicitly requested

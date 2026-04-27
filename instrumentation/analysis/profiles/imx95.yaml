@@ -1,0 +1,111 @@
+# imx95.yaml — i.MX 95-class application processor profile
+# Numbers are placeholders — replace with actual datasheet values from your
+# competitive analysis. This profile is intentionally tight so reports show
+# interesting failures: it's the "smaller, cheaper, more constrained" point
+# in the design space vs rescue_bird_a720.
+
+name: imx95_class
+description: |
+  i.MX 95-class application processor. Smaller NPU, single-channel LPDDR5,
+  no Cadence-class vision DSP. Used to demonstrate where rescue-bird
+  workloads exceed a more constrained chip's budget.
+
+cpu:
+  cores: 6
+  arch: aarch64
+  clock_ghz_max: 2.0
+  l2_kb_per_cluster: 1024
+  l3_kb: 2048
+  efficiency_factor: 0.7
+
+rt_core:
+  present: true
+  type: cortex_m7
+  clock_mhz: 800
+  tcm_kb: 256
+
+npu:
+  tops_bf16: 2
+  tops_fp16: 2
+  tops_int8: 4
+  supports_bf16: true
+  supports_fp16: true
+  supports_int8: true
+  supports_int4: false
+  local_sram_mb: 4
+  efficiency_factor: 0.55
+  llm_capable: false
+  llm_max_context_tokens: 0
+  llm_max_model_params_b: 0
+
+gpu:
+  present: true
+  gflops_fp32: 60
+  efficiency_factor: 0.5
+
+vpu:
+  h265_max_mpix_per_sec: 124       # 4Kp30 ≈ 248 Mpix/s; this fits 1080p60 with margin
+  h264_max_mpix_per_sec: 124
+  av1_supported: false
+  low_latency_mode: true
+  min_encode_latency_ms: 10
+  typical_encode_latency_ms: 25
+
+isp:
+  present: true
+  max_line_rate_mpps: 400
+  max_resolution: "4K_30"
+  max_concurrent_streams: 4
+  csi2_lanes_total: 8
+  csi2_max_gbps_per_lane: 4.5
+  bit_depth: 12
+  hdr_exposures_supported: 2
+  ldc_supported: true
+  ltm_supported: false
+  efficiency_factor: 0.85
+
+dsp:
+  present: false                   # no Cadence-class vision DSP
+  count: 0
+  clock_mhz: 0
+  simd_lanes_int16: 0
+  efficiency_factor: 0
+  giga_cycles_per_sec: 0
+
+memory:
+  type: LPDDR5
+  channels: 1                      # x16 single-channel — the constraint that bites
+  bus_width_per_channel_bits: 16
+  bw_gbps: 17
+  capacity_gb_max: 16
+  controller_efficiency: 0.75
+  refresh_overhead_pct: 5
+
+storage:
+  ufs: true
+  ufs_version: "3.1"
+  ufs_max_mbps: 2900
+  emmc: false
+
+connectivity:
+  pcie_gen: 4
+  pcie_lanes: 2
+  mipi_csi_lanes: 8
+  mipi_csi_max_gbps_per_lane: 4.5
+  ethernet_max_gbps: 1
+  has_5g_modem: false
+
+latency_budgets_ms:
+  glass_to_glass_p99: 100
+  perception_inference_p99: 50
+  radar_to_command_p99: 30
+  fc_inner_loop_period: 1
+
+headroom_pct:
+  npu: 25
+  cpu: 30
+  gpu: 30
+  vpu: 20
+  isp: 15
+  dsp: 25
+  memory_bw: 25

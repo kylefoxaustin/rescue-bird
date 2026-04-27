@@ -1,0 +1,115 @@
+# snapdragon.yaml — Snapdragon-class competitor profile
+# Used to demonstrate the BF16-support differentiator in reports.
+# Numbers are placeholders — replace with public datasheet values when
+# you cite this in a deck.
+#
+# Headline differences vs rescue_bird_a720:
+#   • npu.supports_bf16 is FALSE (perception forced to FP16; see ADR 007)
+#   • No Cadence Vision Q-class DSP (CV preprocessing falls to GPU/CPU; see ADR 005)
+#   • Smaller ISP / fewer concurrent streams
+
+name: snapdragon_class
+description: |
+  Snapdragon-class application processor (placeholder values). Used as a
+  competitor profile to quantify the BF16 differentiator and the
+  cost-of-no-DSP story.
+
+cpu:
+  cores: 8
+  arch: aarch64
+  clock_ghz_max: 2.8
+  l2_kb_per_cluster: 1024
+  l3_kb: 4096
+  efficiency_factor: 0.7
+
+rt_core:
+  present: false
+
+npu:
+  tops_bf16: 0           # no native BF16 — the differentiator
+  tops_fp16: 8
+  tops_int8: 16
+  supports_bf16: false
+  supports_fp16: true
+  supports_int8: true
+  supports_int4: false
+  local_sram_mb: 2
+  efficiency_factor: 0.55
+  llm_capable: true
+  llm_max_context_tokens: 4096
+  llm_max_model_params_b: 7
+
+gpu:
+  present: true
+  gflops_fp32: 1500
+  efficiency_factor: 0.5
+
+vpu:
+  h265_max_mpix_per_sec: 500
+  h264_max_mpix_per_sec: 500
+  av1_supported: true
+  low_latency_mode: true
+  min_encode_latency_ms: 8
+  typical_encode_latency_ms: 15
+
+isp:
+  present: true
+  max_line_rate_mpps: 600
+  max_resolution: "4K_60"
+  max_concurrent_streams: 4
+  csi2_lanes_total: 8
+  csi2_max_gbps_per_lane: 4.5
+  bit_depth: 12
+  hdr_exposures_supported: 3
+  ldc_supported: true
+  ltm_supported: true
+  efficiency_factor: 0.85
+
+# Snapdragon-class designs typically use Hexagon DSP (different architecture
+# from Cadence Vision Q). For apples-to-apples sizing we model "no
+# Cadence-class DSP" — work falls to GPU/CPU.
+dsp:
+  present: false
+  count: 0
+  clock_mhz: 0
+  simd_lanes_int16: 0
+  efficiency_factor: 0
+  giga_cycles_per_sec: 0
+
+memory:
+  type: LPDDR5x
+  channels: 4
+  bus_width_per_channel_bits: 16
+  bw_gbps: 68
+  capacity_gb_max: 24
+  controller_efficiency: 0.75
+  refresh_overhead_pct: 5
+
+storage:
+  ufs: true
+  ufs_version: "3.1"
+  ufs_max_mbps: 2900
+  emmc: false
+
+connectivity:
+  pcie_gen: 4
+  pcie_lanes: 2
+  mipi_csi_lanes: 8
+  mipi_csi_max_gbps_per_lane: 4.5
+  ethernet_max_gbps: 5
+  has_5g_modem: true
+
+latency_budgets_ms:
+  glass_to_glass_p99: 100
+  perception_inference_p99: 50
+  radar_to_command_p99: 30
+  fc_inner_loop_period: 1
+
+headroom_pct:
+  npu: 25
+  cpu: 30
+  gpu: 30
+  vpu: 20
+  isp: 15
+  dsp: 25
+  memory_bw: 25

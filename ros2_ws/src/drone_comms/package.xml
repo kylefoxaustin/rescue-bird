@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>drone_comms</name>
+  <version>0.1.0</version>
+  <description>Radio link emulator + MAVLink/video router. Maps to ARM + modem.</description>
+  <maintainer email="kyle@example.invalid">Kyle</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,45 @@
+# Local env
+.env
+docker/.env
+
+# Build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+*.egg-info/
+
+# TensorRT engine cache (large, hardware-specific)
+models/*.engine
+models/*.plan
+models/*/*.pt
+models/*/*.onnx
+models/*/*.bin
+models/*/*.safetensors
+
+# Run outputs
+runs/
+!runs/.gitkeep
+reports/
+*.bag
+*.db3
+*.mcap
+*.parquet
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,95 @@
+<?xml version="1.0"?>
+<!--
+  search_area.world
+  Minimal Gazebo Classic world for rescue-bird mission scenarios.
+  200m × 200m flat ground with a few static targets the perception node can
+  detect. Replace with a higher-fidelity world (terrain, obstacles, dynamic
+  actors) once the basic stack is validated.
+-->
+<sdf version="1.7">
+  <world name="search_area">
+
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <plugin name="gz::sim::systems::Physics"      filename="gz-sim-physics-system"/>
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
+    <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.5 0.5 0.5 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>500 500</size></plane></geometry>
+          <material>
+            <ambient>0.3 0.4 0.2 1</ambient>
+            <diffuse>0.4 0.5 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Three placeholder targets at the locations referenced by missions/*.yaml.
+         Replace with skeletal/animated person models once available. -->
+    <model name="target_1">
+      <static>true</static>
+      <pose>30 -10 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>1.8 0.5 0.3</size></box></geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.9 0.3 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="target_2">
+      <static>true</static>
+      <pose>80 30 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>1.8 0.5 0.3</size></box></geometry>
+          <material>
+            <ambient>0.2 0.6 0.8 1</ambient>
+            <diffuse>0.3 0.7 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="target_3">
+      <static>true</static>
+      <pose>50 50 0.1 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>1.8 0.5 0.3</size></box></geometry>
+          <material>
+            <ambient>0.8 0.6 0.2 1</ambient>
+            <diffuse>0.9 0.7 0.3 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

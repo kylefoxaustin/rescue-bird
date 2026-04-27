@@ -1,0 +1,54 @@
+# target_acquisition.yaml
+# Spawns 1-3 targets in the search area. Drone must detect, validate, and lock.
+# Exercises the *peak* perception load: the FSM transitions through search →
+# acquire → track and SAM2/EdgeTAM has to do segmentation under motion.
+
+name: target_acquisition
+description: |
+  Search area with planted targets. Drone must transition search → acquire → track.
+  Captures peak perception duty cycle and the bandwidth burst when the segmentation
+  model fires for hi-res mask outputs. This is the scenario whose 95th-percentile
+  numbers should drive NPU sizing, not the cruise baseline.
+
+duration_s: 240
+
+start:
+  lat: 30.2672
+  lon: -97.7431
+  alt_m: 50
+
+search_area:
+  shape: rectangle
+  width_m: 200
+  height_m: 200
+  altitude_m: 50
+  speed_mps: 8
+  track_spacing_m: 30
+
+targets:
+  - id: tgt_1
+    lat: 30.2675
+    lon: -97.7428
+    type: person_supine
+    motion: stationary
+  - id: tgt_2
+    lat: 30.2680
+    lon: -97.7435
+    type: person_walking
+    motion: walking_random
+    speed_mps: 1.2
+
+phases_expected:
+  - phase: transit
+  - phase: search
+  - phase: acquire
+  - phase: track
+  - phase: search        # drone moves on after track timeout
+  - phase: acquire
+  - phase: track
+  - phase: return_to_home
+
+success_criteria:
+  - all_targets_detected: true
+  - perception_p99_latency_ms_under: 80
+  - track_lock_lost_count_under: 2

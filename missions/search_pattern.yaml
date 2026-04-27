@@ -1,0 +1,38 @@
+# search_pattern.yaml
+# Baseline mission: drone flies a lawn-mower search pattern over a defined area.
+# No targets present. Used to characterize *cruise* compute load — the floor.
+
+name: search_pattern
+description: |
+  Lawn-mower search over 200m × 200m area at 50m altitude. No targets.
+  Establishes the per-subsystem cruise baseline: perception still runs (looking),
+  VIO runs continuously, encode at full bitrate, comms nominal. This is the
+  workload the SoC must sustain *indefinitely* without thermal throttling.
+
+duration_s: 180
+
+start:
+  lat: 30.2672
+  lon: -97.7431
+  alt_m: 50
+
+search_area:
+  shape: rectangle
+  width_m: 200
+  height_m: 200
+  altitude_m: 50
+  speed_mps: 8
+  track_spacing_m: 30
+
+phases_expected:
+  - phase: transit
+    approx_duration_s: 15
+  - phase: search
+    approx_duration_s: 150
+  - phase: return_to_home
+    approx_duration_s: 15
+
+success_criteria:
+  - mission_completes_without_error: true
+  - perception_p99_latency_ms_under: 50
+  - encode_dropped_frames_under_pct: 1
