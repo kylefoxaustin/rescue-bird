@@ -19,13 +19,35 @@ FP16, LLM headroom).
 
 ## Current focus
 
-Calibrating `npu_efficiency_factor` (currently 0.55, see ADR 009) against
-real measurements. The next concrete task: replace the `_StubModel` in
-`ros2_ws/src/drone_perception/drone_perception/perception_node.py` with a
-TensorRT-converted EdgeTAM, run `test_cruise_straight` and
-`test_aerobatic_forest`, compare measured vs projected perception
-latency, refine the constant in
-`instrumentation/analysis/whatif/workload_model.py`.
+**Architectural refactor in progress.** Splitting this repo into:
+
+- **`ratchet`** (new repo at github.com/kylefoxaustin/ratchet) — extracts
+  the engine: `instrumentation/analysis/whatif/`, `instrumentation/probes/`,
+  `instrumentation/schemas/`. Pure Python, no use-case bias. Will become
+  a pip-installable dependency.
+- **`nightjar`** (this repo, renamed from rescue-bird) — keeps the
+  drone-specific code: SITL stack, ROS 2 nodes, trajectories, pilot
+  model, missions. Imports ratchet for engine functionality.
+
+The split enables three sizer sites (drone/nightjar, video/keyhole,
+agentic AI/skippy) to share one engine while remaining independent.
+
+**First task of next session:** Read DESIGN.md, docs/decisions/, and the
+current `instrumentation/` tree, then propose a precise file partition
+between ratchet (engine) and nightjar (drone-specific). Resolve the
+ambiguous cases (radar code, pilot model, trajectory generators) by
+applying the test "does every use case need this, or only drones?" —
+drone-only stays in nightjar.
+
+**After the partition:** Execute the extraction, set up nightjar to
+depend on ratchet via local pip install, verify all 102 tests still
+pass, commit both repos.
+
+**Standing calibration goal** (deferred until after the split): Replace
+`_StubModel` in perception_node.py with TensorRT-converted EdgeTAM, run
+test scenarios, refine `npu_efficiency_factor` (currently 0.55, see
+ADR 009).
+
 
 ## Commands
 
