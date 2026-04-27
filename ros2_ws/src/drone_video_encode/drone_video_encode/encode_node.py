@@ -22,8 +22,8 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import ByteMultiArray
 from cv_bridge import CvBridge
 
-from instrumentation.probes import ProbeWriter, NvencProbe
-from instrumentation.schemas import SUBSYSTEM_VIDEO_ENCODE
+from ratchet.probes import ProbeWriter, NvencProbe
+from instrumentation.subsystems import SUBSYSTEM_VIDEO_ENCODE
 
 
 class VideoEncodeNode(Node):

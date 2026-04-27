@@ -23,8 +23,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped
 
-from instrumentation.probes import ProbeWriter, OpProbe
-from instrumentation.schemas import (
+from ratchet.probes import ProbeWriter, OpProbe
+from instrumentation.subsystems import (
     SUBSYSTEM_BEHAVIOR, PHASE_IDLE, PHASE_SEARCH, PHASE_ACQUIRE, PHASE_TRACK, PHASE_RTH,
 )
 

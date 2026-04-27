@@ -9,15 +9,19 @@ import pytest
 import yaml
 from pathlib import Path
 
-from instrumentation.analysis.whatif.workload_model import DEFAULT_WORKLOAD
-from instrumentation.analysis.whatif.kpis import (
-    evaluate, chip_summary,
-    npu_kpis, cpu_kpis, vpu_kpis,
-    isp_kpis, dsp_kpis,
+from instrumentation.sizing.workload import DEFAULT_WORKLOAD
+from ratchet.engine.kpi import (
+    npu_kpis, cpu_kpis,
     memory_bw_kpi, memory_capacity_kpi,
+    chip_summary,
+)
+from instrumentation.sizing.kpis import (
+    evaluate,
+    vpu_kpis,
+    isp_kpis, dsp_kpis,
     g2g_latency_kpi,
 )
-from instrumentation.analysis.whatif.workload_model import all_demands
+from instrumentation.sizing.workload import all_demands
 
 
 PROFILES_DIR = (

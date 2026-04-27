@@ -52,8 +52,8 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from cv_bridge import CvBridge
 
-from instrumentation.probes import ProbeWriter, OpProbe
-from instrumentation.schemas import SUBSYSTEM_DSP, SUBSYSTEM_ISP, SUBSYSTEM_PERCEPTION
+from ratchet.probes import ProbeWriter, OpProbe
+from instrumentation.subsystems import SUBSYSTEM_DSP, SUBSYSTEM_ISP, SUBSYSTEM_PERCEPTION
 
 
 # ──────────────────────────────────────────────────────────────────────

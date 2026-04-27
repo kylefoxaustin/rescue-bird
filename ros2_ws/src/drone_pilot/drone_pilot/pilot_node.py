@@ -22,9 +22,9 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Float32
 
-from instrumentation.probes import ProbeWriter
-from instrumentation.probes.op_probe import OpProbe
-from instrumentation.schemas import WorkloadRecord
+from ratchet.probes import ProbeWriter
+from ratchet.probes.op_probe import OpProbe
+from ratchet.schemas import WorkloadRecord
 from instrumentation.pilots import observe, aggregate, PilotObservation
 
 

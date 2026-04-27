@@ -14,14 +14,13 @@ import pytest
 import yaml
 from pathlib import Path
 
-from instrumentation.analysis.whatif.workload_model import (
+from instrumentation.sizing.workload import (
     DEFAULT_WORKLOAD,
     perception_demand,
     vio_demand,
     radar_demand,
     radar_fusion_demand,
     encode_demand,
-    llm_demand,
     isp_demand,
     dsp_demand,
     behavior_demand,
@@ -29,6 +28,7 @@ from instrumentation.analysis.whatif.workload_model import (
     glass_to_glass_ms,
     all_demands,
 )
+from ratchet.engine.demand import llm_demand
 
 
 # ──────────────────────────────────────────────────────────────────────

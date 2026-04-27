@@ -24,8 +24,8 @@ from sensor_msgs.msg import Image, Imu
 from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge
 
-from instrumentation.probes import ProbeWriter, OpProbe, GpuProbe
-from instrumentation.schemas import (
+from ratchet.probes import ProbeWriter, OpProbe, GpuProbe
+from instrumentation.subsystems import (
     SUBSYSTEM_VIO, SUBSYSTEM_FLIGHT_CONTROL, SUBSYSTEM_SENSOR_INGEST,
 )
 

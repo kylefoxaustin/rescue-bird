@@ -29,8 +29,8 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped
 
-from instrumentation.probes import ProbeWriter, OpProbe, GpuProbe
-from instrumentation.schemas import (
+from ratchet.probes import ProbeWriter, OpProbe, GpuProbe
+from instrumentation.subsystems import (
     SUBSYSTEM_RADAR, SUBSYSTEM_RADAR_FUSION, SUBSYSTEM_OCCUPANCY,
     SUBSYSTEM_BEHAVIOR, SUBSYSTEM_PERCEPTION,
 )

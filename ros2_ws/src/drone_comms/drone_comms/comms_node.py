@@ -25,8 +25,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import ByteMultiArray
 
-from instrumentation.probes import ProbeWriter, OpProbe
-from instrumentation.schemas import SUBSYSTEM_COMMS, SUBSYSTEM_VIDEO_ENCODE
+from ratchet.probes import ProbeWriter, OpProbe
+from instrumentation.subsystems import SUBSYSTEM_COMMS, SUBSYSTEM_VIDEO_ENCODE
 
 
 _LINK_PROFILES = {

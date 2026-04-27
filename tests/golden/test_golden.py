@@ -27,9 +27,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from instrumentation.analysis.whatif.workload_model import DEFAULT_WORKLOAD
-from instrumentation.analysis.whatif.sliders import default_values, apply_sliders
-from instrumentation.analysis.whatif.kpis import evaluate, chip_summary
+from instrumentation.sizing.workload import DEFAULT_WORKLOAD
+from instrumentation.sizing.sliders import default_values, apply_sliders
+from instrumentation.sizing.kpis import evaluate
+from ratchet.engine.kpi import chip_summary
 
 from .configurations import CONFIGURATIONS
 

@@ -6,8 +6,8 @@ import pytest
 import yaml
 from pathlib import Path
 
-from instrumentation.analysis.whatif.workload_model import DEFAULT_WORKLOAD
-from instrumentation.analysis.whatif.sliders import (
+from instrumentation.sizing.workload import DEFAULT_WORKLOAD
+from instrumentation.sizing.sliders import (
     SLIDERS, default_values, apply_sliders, slider_categories,
 )
 

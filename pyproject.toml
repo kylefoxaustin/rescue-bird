@@ -1,7 +1,7 @@
 [project]
-name = "rescue-bird-analysis"
-version = "0.2.0"
-description = "Host-side analysis tooling for rescue-bird mission telemetry"
+name = "nightjar"
+version = "0.3.0-dev"
+description = "Drone software stack and edge-SoC sizer (rescue-bird use case). Depends on the ratchet engine."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -10,13 +10,17 @@ authors = [
 ]
 
 dependencies = [
+    "ratchet>=0.1.0",
+    # Even though pyarrow + nvidia-ml-py are transitive through ratchet, nightjar
+    # imports them directly (report generator, ROS 2 nodes), so we declare them
+    # explicitly to prevent silent breakage if ratchet ever drops them.
     "pyarrow>=14.0",
+    "nvidia-ml-py>=12.535",
     "pandas>=2.0",
     "numpy>=1.24",
     "pyyaml>=6.0",
     "tabulate>=0.9",      # for DataFrame.to_markdown
-    "psutil>=5.9",
-    "nvidia-ml-py>=12.535",
+    "psutil>=5.9",        # used by drone_telemetry node
 ]
 
 [project.optional-dependencies]
@@ -35,7 +39,13 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["instrumentation", "instrumentation.probes", "instrumentation.schemas", "instrumentation.analysis"]
+packages = [
+    "instrumentation",
+    "instrumentation.analysis",
+    "instrumentation.pilots",
+    "instrumentation.trajectories",
+    "instrumentation.sizing",
+]
 
 [tool.ruff]
 line-length = 100

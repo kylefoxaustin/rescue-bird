@@ -1,7 +1,11 @@
-"""sliders.py — all the assumption knobs in one place.
+"""Drone-specific slider catalog.
 
-Each slider is a named, typed, bounded parameter that can be moved to ask
-"what would happen if we changed X?". Sliders fall into four categories:
+The Slider dataclass and apply/default-values machinery live in
+``ratchet.engine.slider``. This module supplies the drone-flavored catalog:
+the ``SLIDERS`` dict, plus camera/encode preset tables and the helper
+functions referenced from slider .apply lambdas.
+
+Sliders fall into four categories:
 
   1. SoC capability sliders     — change what the chip can do (NPU TOPS, etc.)
   2. Workload sliders           — change what the mission demands (model size,
@@ -9,58 +13,16 @@ Each slider is a named, typed, bounded parameter that can be moved to ask
   3. Operating-point sliders    — change deployment choices (precision, fusion
                                   mode, encode preset, link profile, etc.)
   4. Headroom / efficiency      — change the safety margins applied
-
-The KPI engine reads slider values, modifies the SoC profile + workload model,
-and recomputes pass/fail across all subsystems. This is what makes it a real
-sizing tool rather than a static report — you can show an executive
-"if we drop the NPU from 200 TOPS to 100 TOPS, here's what breaks" in
-seconds.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Callable, Optional, Any, List
 
-
-@dataclass
-class Slider:
-    """A single assumption knob."""
-    name: str
-    description: str
-    category: str                           # capability | workload | operating | headroom
-    units: str
-    default: float
-    min_val: float
-    max_val: float
-    step: float = 1.0
-    affects: List[str] = field(default_factory=list)     # KPIs / subsystems impacted
-    # How to apply this slider to (profile_dict, workload_dict).
-    # If None, the slider is purely informational — caller does the mapping.
-    apply: Optional[Callable[[dict, dict, float], None]] = None
-
-    def clamp(self, v: float) -> float:
-        return max(self.min_val, min(self.max_val, v))
+from ratchet.engine.slider import Slider, _set_path  # noqa: F401  (re-export _set_path? no — keep internal)
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Apply functions — small helpers that mutate profile/workload dicts
+# Encode presets — applied via the encode_preset slider
 # ──────────────────────────────────────────────────────────────────────
-
-def _set_path(d: dict, path: str, value: Any) -> None:
-    """Set a dotted path inside a nested dict."""
-    keys = path.split(".")
-    for k in keys[:-1]:
-        d = d.setdefault(k, {})
-    d[keys[-1]] = value
-
-
-def _scale_path(d: dict, path: str, factor: float) -> None:
-    """Multiply a dotted-path value by factor."""
-    keys = path.split(".")
-    for k in keys[:-1]:
-        d = d[k]
-    d[keys[-1]] = d[keys[-1]] * factor
-
 
 _ENCODE_PRESETS = {
     0: [   # FPV only — no recording
@@ -148,7 +110,7 @@ def _apply_camera_preset(workload: dict, idx: int) -> None:
 
 
 def _scale_streams(workload: dict, field: str, factor: float) -> None:
-    """Multiply `field` by factor across all camera streams."""
+    """Multiply ``field`` by factor across all camera streams."""
     streams = workload.get("isp", {}).get("streams", [])
     for s in streams:
         if field in s:
@@ -525,22 +487,22 @@ SLIDERS: dict[str, Slider] = {
 }
 
 
-def slider_categories() -> dict[str, list[Slider]]:
-    """Group sliders by category for UI rendering."""
-    out: dict[str, list[Slider]] = {}
-    for s in SLIDERS.values():
-        out.setdefault(s.category, []).append(s)
-    return out
-
+# Backward-compat shims for sites that called the engine catalog helpers
+# without the catalog argument. The unit tests still use these patterns.
 
 def default_values() -> dict[str, float]:
-    return {name: s.default for name, s in SLIDERS.items()}
+    """Drone slider defaults."""
+    from ratchet.engine.slider import default_values as _dv
+    return _dv(SLIDERS)
+
+
+def slider_categories() -> dict:
+    """Drone slider catalog grouped by category."""
+    from ratchet.engine.slider import slider_categories as _sc
+    return _sc(SLIDERS)
 
 
 def apply_sliders(profile: dict, workload: dict, values: dict[str, float]) -> None:
-    """Apply slider overrides in-place."""
-    for name, v in values.items():
-        s = SLIDERS.get(name)
-        if s is None or s.apply is None:
-            continue
-        s.apply(profile, workload, s.clamp(v))
+    """Apply drone slider overrides in-place."""
+    from ratchet.engine.slider import apply_sliders as _apply
+    _apply(SLIDERS, profile, workload, values)

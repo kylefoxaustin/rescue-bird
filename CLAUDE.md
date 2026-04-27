@@ -1,71 +1,84 @@
-# rescue-bird
+# nightjar
 
-Drone software stack + edge-SoC sizing tool. Two purposes side-by-side:
-**measure** workload via instrumented SITL (ROS 2 + Gazebo + PX4) and
-**project** workload via an analytical model (33 sliders → 15 KPIs). The
-goal is producing defensible numbers for an edge-SoC partitioning
-conversation (NPU TOPS, ISP/DSP/VPU sizing, memory bandwidth, BF16 vs
-FP16, LLM headroom).
+Drone software stack + edge-SoC sizing tool (the rescue-bird use case).
+Two purposes side-by-side: **measure** workload via instrumented SITL
+(ROS 2 + Gazebo + PX4) and **project** workload via an analytical model
+(33 sliders → 15 KPIs). The goal is producing defensible numbers for an
+edge-SoC partitioning conversation (NPU TOPS, ISP/DSP/VPU sizing, memory
+bandwidth, BF16 vs FP16, LLM headroom).
+
+This repo depends on **`ratchet`** (the generic SoC sizing engine) for
+slider/demand/KPI primitives, probes, and the WorkloadRecord schema. See
+the "Dev install" section below.
 
 ## Read these first
 
 - `DESIGN.md` — high-level architecture map
-- `docs/decisions/` — 11 ADRs capturing the *why* behind key choices.
-  Read at minimum 001 (two-source model), 003 (asymmetric multi-camera),
-  009 (NPU efficiency factor — the most-likely-wrong constant), and
-  011 (test harness).
+- `docs/decisions/` — 5 nightjar-specific ADRs (003 asymmetric multi-camera,
+  004 dedicated ISP, 005 Cadence DSP, 006 Cortex-M flight control,
+  010 glass-to-glass <100ms) plus stubs at 001/002/007/008/009/011 pointing
+  to the engine-level ADRs in ratchet.
 - `docs/testing.md` — six layers of testing strategy
 - `docs/whatif_kpis.md` — slider catalog and worked examples
 
-## Current focus
+In the ratchet repo:
+- `ratchet/docs/decisions/` — 6 engine-level ADRs (two-source model,
+  process isolation, BF16, LLM memory-bound, NPU efficiency, trajectory
+  test harness pattern)
 
-**Architectural refactor in progress.** Splitting this repo into:
+## Current state
 
-- **`ratchet`** (new repo at github.com/kylefoxaustin/ratchet) — extracts
-  the engine: `instrumentation/analysis/whatif/`, `instrumentation/probes/`,
-  `instrumentation/schemas/`. Pure Python, no use-case bias. Will become
-  a pip-installable dependency.
-- **`nightjar`** (this repo, renamed from rescue-bird) — keeps the
-  drone-specific code: SITL stack, ROS 2 nodes, trajectories, pilot
-  model, missions. Imports ratchet for engine functionality.
+**v0.3.0-dev** — engine extraction complete. The drone-specific drivers,
+trajectories, pilot model, ROS 2 nodes, profiles, missions, and report
+generator live here. The generic engine (sliders/demands/KPIs/probes/
+schema) lives in [`ratchet`](https://github.com/kylefoxaustin/ratchet).
 
-The split enables three sizer sites (drone/nightjar, video/keyhole,
-agentic AI/skippy) to share one engine while remaining independent.
+A stable v0.3.0 will not be cut until the second site (`keyhole`, the
+video sizer) confirms the ratchet API is solid.
 
-**First task of next session:** Read DESIGN.md, docs/decisions/, and the
-current `instrumentation/` tree, then propose a precise file partition
-between ratchet (engine) and nightjar (drone-specific). Resolve the
-ambiguous cases (radar code, pilot model, trajectory generators) by
-applying the test "does every use case need this, or only drones?" —
-drone-only stays in nightjar.
+**Standing calibration goal**: Replace `_StubModel` in perception_node.py
+with TensorRT-converted EdgeTAM, run test scenarios, refine
+`npu_efficiency_factor` (currently 0.55, see ratchet ADR 005 — formerly
+nightjar ADR 009).
 
-**After the partition:** Execute the extraction, set up nightjar to
-depend on ratchet via local pip install, verify all 102 tests still
-pass, commit both repos.
+## Dev install
 
-**Standing calibration goal** (deferred until after the split): Replace
-`_StubModel` in perception_node.py with TensorRT-converted EdgeTAM, run
-test scenarios, refine `npu_efficiency_factor` (currently 0.55, see
-ADR 009).
+```bash
+# Clone ratchet alongside nightjar
+cd ..
+git clone https://github.com/kylefoxaustin/ratchet.git
+cd nightjar
 
+# Editable install picks up local ratchet sources
+pip install -e ../ratchet
+pip install -e ".[dev]"
+```
+
+If you `pip install -e ".[dev]"` first, pip will pull `ratchet>=0.1.0`
+from PyPI (or fail if it isn't published yet). For active engine
+development, `pip install -e ../ratchet` first to ensure the editable
+checkout is what gets used.
 
 ## Commands
 
 ```bash
-# Run all tests (92 unit + 10 golden, should all pass)
+# Run all tests (82 unit + 10 golden = 92 total)
 pytest tests/ -v
+
+# Run ratchet's own framework tests too
+pytest ../ratchet/tests/ -v   # 76 tests
 
 # Regenerate golden snapshots after intentional model changes
 pytest tests/golden --update-goldens
 
 # Point evaluation: does the default chip pass at default workload?
-python -m instrumentation.analysis.whatif.whatif_cli point
+python -m instrumentation.sizing.whatif_cli point
 
 # 1D sweep over a slider
-python -m instrumentation.analysis.whatif.whatif_cli sweep --slider npu_tops_bf16 --steps 5
+python -m instrumentation.sizing.whatif_cli sweep --slider npu_tops_bf16 --steps 5
 
 # 2D Pareto across two sliders
-python -m instrumentation.analysis.whatif.whatif_cli pareto --x npu_tops_bf16 --y memory_channels
+python -m instrumentation.sizing.whatif_cli pareto --x npu_tops_bf16 --y memory_channels
 
 # Run a SITL mission (requires Docker + GPU)
 ./scripts/run_mission.sh test_aerobatic_forest --target rescue_bird_a720
@@ -73,16 +86,35 @@ python -m instrumentation.analysis.whatif.whatif_cli pareto --x npu_tops_bf16 --
 
 ## Architecture pointers
 
-- `instrumentation/analysis/whatif/` — pure-Python analytical model
-- `instrumentation/analysis/profiles/*.yaml` — SoC profiles (a720, imx95, snapdragon)
-- `instrumentation/probes/` — Parquet-emitting probes (op, GPU, NVENC, g2g)
+- `instrumentation/sizing/` — drone-specific what-if model (sliders,
+  workload demand calcs, KPIs, CLI). Imports the engine framework from
+  `ratchet.engine.*` and the runner from `ratchet.whatif`.
+- `instrumentation/analysis/profiles/*.yaml` — SoC profiles
+  (rescue_bird_a720, imx95, snapdragon)
+- `instrumentation/analysis/soc_partition_report.py` — Markdown report
+  from Parquet runs (drone-flavored; consumes records produced via
+  ratchet probes)
+- `instrumentation/subsystems.py` — drone `SUBSYSTEM_*` and `PHASE_*`
+  string constants (formerly in `instrumentation/schemas/`)
 - `instrumentation/trajectories/` — deterministic flight profile generators
 - `instrumentation/pilots/` — measurement-only pilot flyability model
-- `ros2_ws/src/drone_*/` — per-subsystem ROS 2 nodes (each maps to a silicon engine)
+- `ros2_ws/src/drone_*/` — per-subsystem ROS 2 nodes (each maps to a
+  silicon engine; imports `ratchet.probes` and `ratchet.schemas`)
 - `missions/test_*.yaml` — the four trajectory-driven test scenarios
+
+In ratchet:
+- `ratchet/engine/` — Slider, SubsystemDemand, KpiResult dataclasses;
+  generic NPU/CPU/memory KPIs; LLM-bandwidth math
+- `ratchet/whatif/` — point/sweep/pareto runner that consumes the engine
+- `ratchet/probes/` — Parquet-emitting probes (op, GPU, NVENC, g2g)
+- `ratchet/schemas/` — WorkloadRecord dataclass + PyArrow schema
 
 ## Gotchas
 
+- **Editable ratchet install**: if you change ratchet sources, the
+  changes are picked up immediately by nightjar (because of
+  `pip install -e ../ratchet`). No reinstall needed. Do reinstall if
+  you change ratchet's pyproject.toml.
 - **Cross-platform line endings**: this repo expects LF. If editing on
   Windows, set `git config core.autocrlf false` and `git config
   core.fileMode false` in your local clone before committing.
@@ -92,6 +124,6 @@ python -m instrumentation.analysis.whatif.whatif_cli pareto --x npu_tops_bf16 --
   so the SITL plumbing can be validated before real model weights are
   wired in. When swapping in real models, keep the stub path as a
   fallback for CI.
-- **ROS 2 hop latency overstates real silicon by 5-10×** (see ADR 002).
-  Subtract DDS overhead before reporting on-chip latency in the
-  competitive deck.
+- **ROS 2 hop latency overstates real silicon by 5-10×** (see ratchet
+  ADR 002, formerly nightjar ADR 002). Subtract DDS overhead before
+  reporting on-chip latency in the competitive deck.

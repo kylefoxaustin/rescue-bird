@@ -26,8 +26,8 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from cv_bridge import CvBridge
 
-from instrumentation.probes import ProbeWriter, OpProbe, GpuProbe
-from instrumentation.schemas import (
+from ratchet.probes import ProbeWriter, OpProbe, GpuProbe
+from instrumentation.subsystems import (
     SUBSYSTEM_PERCEPTION, SUBSYSTEM_BEHAVIOR, SUBSYSTEM_SENSOR_INGEST,
 )
 

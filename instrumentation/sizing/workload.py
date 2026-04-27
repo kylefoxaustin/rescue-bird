@@ -1,25 +1,21 @@
-"""workload_model.py — translate slider values into per-subsystem demands.
+"""Drone-specific workload model — per-subsystem demand calculators.
 
-This is the analytical model that runs *between* slider input and KPI output.
-It encodes the relationships:
+The ``SubsystemDemand`` dataclass and the ``llm_demand`` math live in
+``ratchet.engine.demand``. This module supplies the drone-shaped pieces:
+``DEFAULT_WORKLOAD``, the per-subsystem demand calculators (perception,
+VIO, radar, radar fusion, encode, behavior, comms, ISP, DSP), the
+glass-to-glass latency model, and the ``all_demands`` roll-up.
 
-    "if perception_input_megapixels = 4 and perception_fps = 30 and
-     perception_model_gmacs = 50, then perception requires X TOPS,
-     Y GB/s of memory bandwidth, Z ms p99 latency..."
-
-The model is intentionally simple and inspectable. It's a first-order
-analytical estimate, not a cycle-accurate simulator. The actual mission
-telemetry from the SITL run is the ground truth for *measured* numbers;
-the workload model provides *projected* numbers for what-if analysis.
-
-When real telemetry exists for a given configuration, the report shows both
-projected and measured side by side, so you can see how good the model is
-and refine its constants over time.
+The demand calculators are intentionally simple and inspectable. They're
+first-order analytical estimates, not cycle-accurate simulators. The actual
+mission telemetry from the SITL run is the ground truth for *measured*
+numbers; the workload model provides *projected* numbers for what-if
+analysis (see ratchet ADR 001 — two-source model).
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Optional
+
+from ratchet.engine.demand import SubsystemDemand, eff_tops, llm_demand
 
 
 # ──── Default workload parameters (overridden by sliders) ────
@@ -145,26 +141,6 @@ _ISP_STAGES_NS_PER_PIXEL = {
 }
 
 
-@dataclass
-class SubsystemDemand:
-    """What one subsystem requires from the chip."""
-    name: str
-    target_engine: str           # npu | cpu | gpu | vpu | arm_modem | rt_core
-    tops_required: float = 0.0
-    cpu_cores_required: float = 0.0
-    memory_bw_gbps: float = 0.0
-    memory_capacity_mb: float = 0.0
-    latency_ms_p99: float = 0.0
-    notes: list[str] = field(default_factory=list)
-
-
-def _eff_tops(profile_npu: dict, precision: str) -> float:
-    """Effective NPU TOPS at the given precision after efficiency factor."""
-    peak = profile_npu.get(f"tops_{precision}", profile_npu.get("tops_bf16", 0))
-    eff = profile_npu.get("efficiency_factor", 0.55)
-    return peak * eff
-
-
 def _resolution_pixels(mult: float) -> int:
     w, h = _ENCODE_RESOLUTIONS[int(mult)]
     return w * h
@@ -177,12 +153,10 @@ def _resolution_pixels(mult: float) -> int:
 def perception_demand(profile: dict, workload: dict) -> SubsystemDemand:
     p = workload["perception"]
     npu = profile["npu"]
-    eff = _eff_tops(npu, p["precision"])
+    eff = eff_tops(npu, p["precision"])
     # 2 ops per MAC × GMAC × fps → required TOPS
     required = (2 * p["gmacs_per_inference"] * p["fps"]) / 1000.0
     # latency_ms = (2 × GMAC) / eff_TOPS × tail_factor
-    # Derivation: latency_s = (2 × GMAC × 1e9) / (TOPS × 1e12)
-    #           = (2 × GMAC) / (TOPS × 1e3); ×1000 to ms = (2 × GMAC) / TOPS
     if eff > 0:
         latency = (2 * p["gmacs_per_inference"]) / eff * 1.4
     else:
@@ -204,7 +178,7 @@ def perception_demand(profile: dict, workload: dict) -> SubsystemDemand:
 def vio_demand(profile: dict, workload: dict) -> SubsystemDemand:
     v = workload["vio"]
     npu = profile["npu"]
-    eff = _eff_tops(npu, v["precision"])
+    eff = eff_tops(npu, v["precision"])
     required = (2 * v["gmacs_per_inference"] * v["fps"]) / 1000.0
     pixels = v["input_megapixels"] * 1e6
     bw = (pixels * 1 * v["fps"] * 3.0) / 1e9
@@ -221,7 +195,6 @@ def vio_demand(profile: dict, workload: dict) -> SubsystemDemand:
 
 def radar_demand(profile: dict, workload: dict) -> SubsystemDemand:
     r = workload["radar"]
-    cpu = profile["cpu"]
     # ARM compute: clustering + tracking. Model as fraction of 1 core.
     # ~0.5ms at 1000 points → at 20Hz is 1% of a core.
     points_per_sec = r["points_per_frame"] * r["hz"]
@@ -249,9 +222,8 @@ def radar_fusion_demand(profile: dict, workload: dict) -> SubsystemDemand:
     r = workload["radar"]
     npu = profile["npu"]
     gmacs = _FUSION_GMACS.get(rf["mode"], 8.0)
-    eff = _eff_tops(npu, "bf16")
+    eff = eff_tops(npu, "bf16")
     required = (2 * gmacs * r["hz"]) / 1000.0
-    # latency_ms = (2 × GMAC / eff_TOPS) × tail_factor
     latency = ((2 * gmacs) / eff) * 1.4 if eff > 0 else float("inf")
     bw = (r["points_per_frame"] * 16 + 1024 * 1024 * 3) * r["hz"] / 1e9
     return SubsystemDemand(
@@ -265,8 +237,8 @@ def radar_fusion_demand(profile: dict, workload: dict) -> SubsystemDemand:
 
 
 def encode_demand(profile: dict, workload: dict) -> SubsystemDemand:
-    """Encode: handles either the legacy single-stream `encode` config or the
-    new multi-stream `encode_streams` list. The multi-stream case is the
+    """Encode: handles either the legacy single-stream ``encode`` config or the
+    multi-stream ``encode_streams`` list. The multi-stream case is the
     realistic one — FPV forward + lower-priority surround streams running
     on the same VPU with different latency/quality settings.
 
@@ -332,32 +304,7 @@ def encode_demand(profile: dict, workload: dict) -> SubsystemDemand:
     )
 
 
-def llm_demand(profile: dict, workload: dict) -> SubsystemDemand:
-    l = workload["llm"]
-    npu = profile["npu"]
-    if not l["active"]:
-        return SubsystemDemand(name="llm", target_engine="npu")
-    # LLM inference is memory-bandwidth bound, not compute bound.
-    # Bytes/token ≈ params × bytes_per_param. INT8 = 1 byte.
-    bpp = {"int4": 0.5, "int8": 1, "fp16": 2, "bf16": 2}.get(l["precision"], 1)
-    bytes_per_token = l["params_b"] * 1e9 * bpp
-    bw = (bytes_per_token * l["tokens_per_sec"]) / 1e9
-    # Compute TOPS demand (much smaller than memory pressure usually)
-    # ~2 × params × tokens/sec ops
-    required = (2 * l["params_b"] * l["tokens_per_sec"]) / 1000.0
-    return SubsystemDemand(
-        name="llm",
-        target_engine="npu",
-        tops_required=required,
-        memory_bw_gbps=bw,
-        memory_capacity_mb=l["params_b"] * 1000 * bpp,    # weights resident
-        latency_ms_p99=1000.0 / l["tokens_per_sec"],     # inverse of throughput
-        notes=["LLM is memory-BW bound — bandwidth, not TOPS, is the constraint"],
-    )
-
-
 def behavior_demand(profile: dict, workload: dict) -> SubsystemDemand:
-    b = workload["behavior"]
     return SubsystemDemand(
         name="behavior",
         target_engine="cpu",
@@ -426,7 +373,6 @@ def isp_demand(profile: dict, workload: dict) -> SubsystemDemand:
     # Slight increase for many concurrent streams due to arbitration.
     latency = 3.0 + 0.2 * max(0, n_cameras - 2)
 
-    # Notes: list per-stream contribution if there's interesting asymmetry
     notes = [f"line_rate_mpps={total_line_rate_mpps:.1f}"]
     if n_cameras > 2:
         notes.append(f"{n_cameras} streams: " + ", ".join(

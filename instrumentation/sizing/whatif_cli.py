@@ -1,55 +1,67 @@
-"""whatif_cli.py — interactive sizing tool.
+"""whatif_cli.py — drone-specific CLI for the what-if sizing tool.
 
-Three modes:
-
-  1. point        : evaluate KPIs at a single slider configuration
-                    (all sliders at default unless overridden)
-  2. sweep        : sweep one slider across its range, report KPI status at each step
-  3. pareto       : sweep two sliders; emit a 2D pass/fail grid (Pareto frontier)
+The what-if engine (point/sweep/pareto runner) lives in ``ratchet.whatif``.
+This module wires the drone slider catalog, drone evaluate function, drone
+DEFAULT_WORKLOAD, and the drone profile loader into a ``WhatifRunner``,
+then prints the results in the same Markdown format as before.
 
 Examples:
     # Default A720 + 200 TOPS, no LLM
-    python -m instrumentation.analysis.whatif.whatif_cli point
+    python -m instrumentation.sizing.whatif_cli point
 
     # Try with the LLM active and 7B params
-    python -m instrumentation.analysis.whatif.whatif_cli point \\
+    python -m instrumentation.sizing.whatif_cli point \\
         --set llm_active=1 --set llm_model_b_params=7
 
     # How does perception fit as we drop NPU TOPS?
-    python -m instrumentation.analysis.whatif.whatif_cli sweep \\
+    python -m instrumentation.sizing.whatif_cli sweep \\
         --slider npu_tops_bf16 --steps 10
 
     # Pareto: NPU TOPS × LLM size
-    python -m instrumentation.analysis.whatif.whatif_cli pareto \\
+    python -m instrumentation.sizing.whatif_cli pareto \\
         --x npu_tops_bf16 --y llm_model_b_params --set llm_active=1
 
     # Show all available sliders
-    python -m instrumentation.analysis.whatif.whatif_cli list
+    python -m instrumentation.sizing.whatif_cli list
 """
 
 from __future__ import annotations
 import argparse
-import copy
 import json
 import sys
 from pathlib import Path
 
 import yaml
 
-from .sliders import SLIDERS, default_values, apply_sliders, slider_categories
-from .workload_model import DEFAULT_WORKLOAD
-from .kpis import evaluate, chip_summary
+from ratchet.whatif import WhatifRunner
+
+from .sliders import SLIDERS
+from .workload import DEFAULT_WORKLOAD
+from .kpis import evaluate
+from ratchet.engine.slider import slider_categories as _slider_categories
+
+
+PROFILES_DIR = (
+    Path(__file__).parent.parent / "analysis" / "profiles"
+)
 
 
 def _load_profile(name: str) -> dict:
     """Load a SoC profile by name from instrumentation/analysis/profiles/."""
-    profile_path = (
-        Path(__file__).parent.parent / "profiles" / f"{name}.yaml"
-    )
+    profile_path = PROFILES_DIR / f"{name}.yaml"
     if not profile_path.exists():
         print(f"Profile not found: {profile_path}", file=sys.stderr)
         sys.exit(1)
     return yaml.safe_load(profile_path.read_text())
+
+
+def _build_runner() -> WhatifRunner:
+    return WhatifRunner(
+        sliders=SLIDERS,
+        evaluate_fn=evaluate,
+        default_workload_factory=lambda: DEFAULT_WORKLOAD,
+        profile_loader=_load_profile,
+    )
 
 
 def _parse_set_args(set_args: list[str]) -> dict[str, float]:
@@ -67,21 +79,12 @@ def _parse_set_args(set_args: list[str]) -> dict[str, float]:
     return out
 
 
-def _build_state(profile_name: str, overrides: dict[str, float]) -> tuple[dict, dict, dict]:
-    profile = _load_profile(profile_name)
-    workload = copy.deepcopy(DEFAULT_WORKLOAD)
-    values = default_values()
-    values.update(overrides)
-    apply_sliders(profile, workload, values)
-    return profile, workload, values
-
-
 # ──────────────────────────────────────────────────────────────────────
 # Commands
 # ──────────────────────────────────────────────────────────────────────
 
 def cmd_list(args) -> None:
-    cats = slider_categories()
+    cats = _slider_categories(SLIDERS)
     for cat in ["capability", "workload", "operating", "headroom"]:
         sliders = cats.get(cat, [])
         if not sliders:
@@ -94,9 +97,9 @@ def cmd_list(args) -> None:
 
 def cmd_point(args) -> None:
     overrides = _parse_set_args(args.set or [])
-    profile, workload, values = _build_state(args.profile, overrides)
-    results = evaluate(profile, workload)
-    summary = chip_summary(results)
+    runner = _build_runner()
+    result = runner.point(args.profile, overrides)
+    summary = result.summary
 
     print(f"\n# What-if Point Evaluation")
     print(f"\nProfile: **{args.profile}**")
@@ -118,7 +121,7 @@ def cmd_point(args) -> None:
     print(f"\n## All KPIs\n")
     print(f"| status | scope | target | metric | required | budget | margin | units |")
     print(f"|--------|-------|--------|--------|---------:|-------:|-------:|-------|")
-    for r in results:
+    for r in result.kpis:
         print(f"| {r.emoji} {r.status} | {r.scope} | {r.target} | {r.metric} | "
               f"{r.required:.2f} | {r.budget:.2f} | {r.margin_pct:+.0f}% | {r.units} |")
 
@@ -127,7 +130,7 @@ def cmd_point(args) -> None:
             "profile": args.profile,
             "overrides": overrides,
             "summary": summary,
-            "kpis": [r.__dict__ for r in results],
+            "kpis": [r.__dict__ for r in result.kpis],
         }
         Path(args.json).write_text(json.dumps(out, indent=2))
         print(f"\nJSON written to {args.json}")
@@ -137,57 +140,42 @@ def cmd_sweep(args) -> None:
     overrides = _parse_set_args(args.set or [])
     if args.slider not in SLIDERS:
         print(f"Unknown slider: {args.slider}", file=sys.stderr); sys.exit(1)
-    s = SLIDERS[args.slider]
 
-    steps = args.steps
-    if steps < 2:
-        steps = 2
-    span = s.max_val - s.min_val
-    values = [s.min_val + (span * i / (steps - 1)) for i in range(steps)]
+    runner = _build_runner()
+    result = runner.sweep(args.profile, args.slider, args.steps, overrides)
 
     print(f"\n# Sweep: {args.slider}")
-    print(f"\nProfile: **{args.profile}**  ·  range [{s.min_val}, {s.max_val}]  ·  {steps} steps\n")
+    s = SLIDERS[args.slider]
+    print(f"\nProfile: **{args.profile}**  ·  range [{s.min_val}, {s.max_val}]  ·  {len(result.rows)} steps\n")
 
     print(f"| {args.slider} | viable | PASS | WARN | FAIL | top failure |")
     print(f"|----:|:------:|:----:|:----:|:----:|:-----------|")
-    for v in values:
-        ovr = dict(overrides); ovr[args.slider] = v
-        profile, workload, _ = _build_state(args.profile, ovr)
-        results = evaluate(profile, workload)
-        summary = chip_summary(results)
+    for row in result.rows:
+        summary = row.summary
         top_fail = summary["failures"][0]["name"] if summary["failures"] else "—"
         viable_icon = "✅" if summary["viable"] else "❌"
-        print(f"| {v:.2f} | {viable_icon} | {summary['pass']} | {summary['warn']} | "
+        print(f"| {row.value:.2f} | {viable_icon} | {summary['pass']} | {summary['warn']} | "
               f"{summary['fail']} | {top_fail} |")
 
 
 def cmd_pareto(args) -> None:
     overrides = _parse_set_args(args.set or [])
-    for axis in (args.x, args.y):
-        if axis not in SLIDERS:
-            print(f"Unknown slider: {axis}", file=sys.stderr); sys.exit(1)
-
-    sx, sy = SLIDERS[args.x], SLIDERS[args.y]
-    nx, ny = args.steps_x, args.steps_y
-    xs = [sx.min_val + ((sx.max_val - sx.min_val) * i / (nx - 1)) for i in range(nx)]
-    ys = [sy.min_val + ((sy.max_val - sy.min_val) * j / (ny - 1)) for j in range(ny)]
+    runner = _build_runner()
+    result = runner.pareto(
+        args.profile, args.x, args.y, args.steps_x, args.steps_y, overrides,
+    )
 
     print(f"\n# Pareto: {args.x} × {args.y}")
     print(f"\nProfile: **{args.profile}**\n")
     print(f"Cell shows # of failing KPIs (0 = viable). y-axis is {args.y}, x-axis is {args.x}.\n")
 
-    # Header row
-    header = "| " + args.y + r" \ " + args.x + " | " + " | ".join(f"{x:.1f}" for x in xs) + " |"
-    sep = "|" + "---|" * (nx + 1)
+    header = "| " + args.y + r" \ " + args.x + " | " + " | ".join(f"{x:.1f}" for x in result.xs) + " |"
+    sep = "|" + "---|" * (len(result.xs) + 1)
     print(header); print(sep)
-    for y in ys:
+    for j, y in enumerate(result.ys):
         cells = [f"**{y:.1f}**"]
-        for x in xs:
-            ovr = dict(overrides)
-            ovr[args.x] = x; ovr[args.y] = y
-            profile, workload, _ = _build_state(args.profile, ovr)
-            results = evaluate(profile, workload)
-            n_fail = sum(1 for r in results if r.status == "FAIL")
+        for cell_summary in result.cells[j]:
+            n_fail = cell_summary["fail"]
             icon = "✅" if n_fail == 0 else f"❌{n_fail}"
             cells.append(icon)
         print("| " + " | ".join(cells) + " |")
@@ -198,7 +186,7 @@ def cmd_pareto(args) -> None:
 # ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="What-if sizing tool for the rescue-bird SoC")
+    ap = argparse.ArgumentParser(description="What-if sizing tool for the rescue-bird/nightjar drone SoC")
     ap.add_argument("--profile", default="rescue_bird_a720",
                     help="SoC profile name (under instrumentation/analysis/profiles/)")
     sub = ap.add_subparsers(dest="cmd", required=True)
